@@ -1,0 +1,136 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.linear_model import LinearRegression
+from sklearn.neighbors import KNeighborsRegressor
+from statsmodels.tsa.arima.model import ARIMA
+from sklearn.metrics import mean_squared_error
+from statsmodels.stats.stattools import jarque_bera
+from pmdarima.arima import auto_arima
+import seaborn as sns
+
+### ImportaÇção a base de dados
+custo_assis = pd.read_csv('C:/Users/danny/Downloads/TCC - MBA Puc Minas/Base de dados/Manual/base_de_dados.csv', sep=";")
+custo_assis['custo'] = custo_assis['custo'].str.replace(',', '.').astype(float)
+custo_assis['Tempo'] = pd.to_datetime(custo_assis['Tempo'], format='%d/%m/%Y')
+custo_assis = custo_assis.set_index('Tempo')
+
+### Divisão em treino e teste
+treino = custo_assis.loc['2015-01-01':'2019-10-01']
+teste = custo_assis.loc['2020-01-01':'2023-07-01']
+
+#### Modelo ARIMA
+stepwise = auto_arima(treino, start_p=1, start_q=1, max_p=6, max_q=6, m=4, start_P=0, seasonal=True, d=1, D=1, trace=True,
+                      error_action='ignore', suppress_warnings=True, stepwise=True)
+stepwise1 = auto_arima(treino, start_p=1, start_q=1, max_p=6, max_q=6, m=4, start_P=0, seasonal=True, d=1, D=1, trace=True,
+                       error_action='ignore', suppress_warnings=True, stepwise=False)
+
+#### Ajuste e previsão do modelo ARIMA
+stepwise.fit(treino)
+stepwise1.fit(treino)
+future_forecast = stepwise.predict(n_periods=15)
+future_forecast1 = stepwise1.predict(n_periods=15)
+future_forecast = pd.DataFrame(future_forecast, index=teste.index, columns=['previsão modelo 1'])
+future_forecast1 = pd.DataFrame(future_forecast1, index=teste.index, columns=['previsão modelo 2'])
+
+### AIC e BIC do modelo ARIMA
+print("AIC do modelo ARIMA (stepwise):", stepwise.aic())
+print("BIC do modelo ARIMA (stepwise):", stepwise.bic())
+print("AIC do modelo ARIMA (stepwise1):", stepwise1.aic())
+print("BIC do modelo ARIMA (stepwise1):", stepwise1.bic())
+
+#### Plotando as previsões do modelo ARIMA
+plt.figure(figsize=(20, 5))
+pd.concat([teste, future_forecast, future_forecast1], axis=1).plot(figsize=(20, 5))
+plt.xlabel('')
+plt.title('Previsões X Real', size=15)
+plt.legend(['Valor real', 'previsão 1', 'previsão 2'])
+plt.show()
+
+pd.concat([custo_assis, future_forecast], axis=1).plot(linewidth=1, figsize=(20, 5))
+plt.legend('')
+plt.xlabel('')
+plt.title('Previsões X Real', size=15)
+plt.show()
+
+pd.concat([custo_assis, future_forecast1], axis=1).plot(linewidth=1, figsize=(20, 5))
+plt.legend('')
+plt.xlabel('')
+plt.title('Previsões X Real', size=15)
+plt.show()
+
+#### Modelo de Regressão Linear
+modelo = LinearRegression()
+modelo.fit(np.arange(len(treino)).reshape(-1, 1), treino['custo'].values)
+previsoes_teste_reg_linear = modelo.predict(np.arange(len(treino), len(treino) + len(teste)).reshape(-1, 1))
+previsoes_futuro_reg_linear = modelo.predict(np.arange(len(custo_assis), len(custo_assis) + 5 * 1).reshape(-1, 1))
+
+#### AIC e BIC do modelo de Regressão Linear
+print("AIC do modelo de Regressão Linear:", len(treino) * np.log(mean_squared_error(teste, previsoes_teste_reg_linear)) + 2 * (2 + 1))
+print("BIC do modelo de Regressão Linear:", len(treino) * np.log(mean_squared_error(teste, previsoes_teste_reg_linear)) + np.log(len(treino)) * (2 + 1))
+
+### Plotando as previsões do modelo de Regressão Linear
+plt.figure(figsize=(10, 6))
+plt.plot(treino.index, treino['custo'].values, label='Treino')
+plt.plot(teste.index, teste['custo'].values, label='Teste')
+plt.plot(teste.index, previsoes_teste_reg_linear, label='Previsão Teste (Reg. Linear)')
+plt.plot(pd.date_range(start='2023-10-01', periods=5, freq='3M'), previsoes_futuro_reg_linear, label='Previsão Futuro (Reg. Linear)')
+plt.xlabel('Data')
+plt.ylabel('Custo de Assistência')
+plt.title('Previsões X Real (Regressão Linear)')
+plt.legend()
+plt.show()
+
+#### Modelo KNN
+modelo_knn = KNeighborsRegressor(n_neighbors=5)
+modelo_knn.fit(np.arange(len(treino)).reshape(-1, 1), treino['custo'].values)
+previsoes_teste_knn = modelo_knn.predict(np.arange(len(treino), len(treino) + len(teste)).reshape(-1, 1))
+previsoes_futuro_knn = modelo_knn.predict(np.arange(len(custo_assis), len(custo_assis) + 5 * 1).reshape(-1, 1))
+
+#### AIC e BIC do modelo KNN
+print("AIC do modelo KNN:", len(treino) * np.log(mean_squared_error(teste, previsoes_teste_knn)) + 2 * (2 + 1))
+print("BIC do modelo KNN:", len(treino) * np.log(mean_squared_error(teste, previsoes_teste_knn)) + np.log(len(treino)) * (2 + 1))
+
+#### Plotando as previsões do modelo KNN
+plt.figure(figsize=(10, 6))
+plt.plot(treino.index, treino['custo'].values, label='Treino')
+plt.plot(teste.index, teste['custo'].values, label='Teste')
+plt.plot(teste.index, previsoes_teste_knn, label='Previsão Teste (KNN)')
+plt.plot(pd.date_range(start='2023-10-01', periods=5, freq='3M'), previsoes_futuro_knn, label='Previsão Futuro (KNN)')
+plt.xlabel('Data')
+plt.ylabel('Custo de Assistência')
+plt.title('Previsões X Real (KNN)')
+plt.legend()
+plt.show()
+
+#### Análise de Resíduos
+erros_arima = pd.DataFrame(np.array(future_forecast.values.tolist()) - np.array(teste.values.tolist()))
+erros_arima1 = pd.DataFrame(np.array(future_forecast1.values.tolist()) - np.array(teste.values.tolist()))
+erros_reg_linear = teste['custo'].values - previsoes_teste_reg_linear
+erros_knn = teste['custo'].values - previsoes_teste_knn
+
+fig, ax = plt.subplots(2, 2, figsize=(20, 10))
+sns.histplot(erros_arima, ax=ax[0, 0])
+sns.histplot(erros_arima1, ax=ax[0, 1], color='red')
+sns.histplot(erros_reg_linear, ax=ax[1, 0], color='green')
+sns.histplot(erros_knn, ax=ax[1, 1], color='orange')
+
+#### Teste de Normalidade Jarque-Bera
+teste_jb_arima = jarque_bera(erros_arima)
+teste_jb_arima1 = jarque_bera(erros_arima1)
+teste_jb_reg_linear = jarque_bera(erros_reg_linear)
+teste_jb_knn = jarque_bera(erros_knn)
+
+print("Jarque-Bera (modelo ARIMA):", teste_jb_arima[0], teste_jb_arima[1])
+print("Jarque-Bera (modelo ARIMA1):", teste_jb_arima1[0], teste_jb_arima1[1])
+print("Jarque-Bera (modelo Regressão Linear):", teste_jb_reg_linear[0], teste_jb_reg_linear[1])
+print("Jarque-Bera (modelo KNN):", teste_jb_knn[0], teste_jb_knn[1])
+
+#### Exportando resultados para Excel
+future_forecast2 = stepwise.predict(n_periods=5)
+future_forecast2 = pd.DataFrame(future_forecast2,
+                                index=pd.date_range(start='2023-10-01',
+                                                    end='2024-10-01', freq='MS'),
+                                columns=['Previsão de custo assistencial'])
+
+future_forecast2.to_excel('Resultado regressão - custo para os próximos 5 trimestres.xlsx')
